@@ -403,11 +403,9 @@ if selected_options:
 else:
     st.write("Nenhum dado disponível para o intervalo selecionado.")
 
-'''
 # Contar execuções por estado
-state_counts = count_executions_by_state(selected_data) #, selected_state)
+state_counts = count_executions_by_state(data) #, selected_state)
 
 # Exibir o gráfico de barras com execuções por estado
 st.subheader("Execuções por Estado")
 bar_by_state(state_counts)
-'''
