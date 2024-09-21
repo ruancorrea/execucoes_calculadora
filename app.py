@@ -215,12 +215,15 @@ def lineplot(data, days_filters):
     st.pyplot(plt)
 
 # Função para contar as execuções por estado
-def count_executions_by_state(data):
+def count_executions_by_state(data, selected_state, selected_data):
     state_counts = defaultdict(int)
+    sorted_dates = [item[0] for item in selected_data]
     for item in data:
-        state = item.get("state")
-        if state and state != "Não informado":
-            state_counts[state] += 1
+        timestamp = timestamp = datetime.datetime.fromisoformat(item.get('timeStamp').replace("Z", "+00:00")).date()
+        if timestamp in sorted_dates:
+            state = item.get("state")
+            if state == selected_state or selected_state == "Geral" and state != "Não informado":
+                state_counts[state] += 1
     return state_counts
 
 # Função para exibir o gráfico de barras de execuções por estado
@@ -235,7 +238,7 @@ def bar_by_state(state_counts):
     fig.patch.set_facecolor('#1a1a1a')  # Fundo da figura
     ax.set_facecolor('#1a1a1a')  # Fundo do gráfico
 
-    barplot = sns.barplot(x=states, y=counts, palette='Paired', ax=ax)
+    barplot = sns.barplot(x=states, y=counts, hue=states, palette='Paired', width=0.4, ax=ax)
 
     # Adicionar os valores em cima de cada barra
     for i, count in enumerate(counts):
@@ -404,7 +407,7 @@ else:
     st.write("Nenhum dado disponível para o intervalo selecionado.")
 
 # Contar execuções por estado
-state_counts = count_executions_by_state(data) #, selected_state)
+state_counts = count_executions_by_state(data, selected_state, selected_data)
 
 # Exibir o gráfico de barras com execuções por estado
 st.subheader("Execuções por Estado")
