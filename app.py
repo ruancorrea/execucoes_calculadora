@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 import requests
 import datetime
 import matplotlib.pyplot as plt
@@ -13,13 +14,21 @@ def fetch_data():
     return response.json()
 
 # Função para processar os dados
-def process_data(data):
+def process_data(data, application_cutoff_date=None):
     date_counts = defaultdict(int)
+    cutoff_date = datetime.date(2024, 8, 26)
     for item in data:
         timestamp_str = item.get("timeStamp")
         if timestamp_str:
             timestamp = datetime.datetime.fromisoformat(timestamp_str.replace("Z", "+00:00")).date()
-            date_counts[timestamp] += 1
+            if application_cutoff_date == "Depois":
+                if timestamp >= cutoff_date: 
+                    date_counts[timestamp] += 1
+            elif application_cutoff_date == "Antes":
+                if timestamp < cutoff_date: 
+                    date_counts[timestamp] += 1
+            else:
+                date_counts[timestamp] += 1
     return date_counts
 
 # Função para dividir os dados em semanas
@@ -29,7 +38,7 @@ def split_by_weeks(date_counts):
     date = sorted_dates[-1]
     initial_date = sorted_dates[0]
     weeks = defaultdict(list)
-    i = len(sorted_dates) + 1
+    i = len(sorted_dates) + 7
 
     while date >= initial_date:
         week_num = i // 7 + 1
@@ -67,7 +76,64 @@ def sorted_dict(data):
     return ordered_data
 
 # Função para criar o gráfico
-def plot_data(data, days_filters):
+def bar(data, title="Gráfico de Barras", list_legends=None):
+    sns.set_theme(style="whitegrid", context="talk", palette="deep", rc={"axes.facecolor": "#1a1a1a", "grid.color": "gray"})
+
+    fig, ax = plt.subplots(figsize=(12, 7))
+    fig.patch.set_facecolor('#1a1a1a')  # Fundo da figura
+    ax.set_facecolor('#1a1a1a')  # Fundo do gráfico
+
+    # Transformar os dados em um DataFrame
+    weeks = []
+    counts = []
+    disponibility = []
+    cutoff_date = datetime.date(2024, 8, 26)
+    for week, values in data.items():
+        total_count = 0
+        disp = "Protegido por token"
+        for date, count in values:
+            total_count += count
+            if date >= cutoff_date :
+                disp = "Aberto ao público"
+        weeks.append(week)
+        counts.append(total_count)
+        disponibility.append(disp)
+
+    weeks.reverse()
+    counts.reverse()
+    disponibility.reverse()
+    data = pd.DataFrame({'Interval': weeks, 'Count': counts, 'Disponiility': disponibility})
+    
+    barplot = sns.barplot(x='Interval', y='Count', hue='Disponiility', data=data, palette='Paired', width=0.4, legend=True)
+
+    for i in range(len(data)):
+        count_value = data['Count'][i]
+        barplot.text(i, count_value + (0.05 * max(data['Count'])), str(count_value), ha='center', va='bottom', fontweight='bold', color='white')
+
+    #plt.title(title, color='white', fontsize=16)
+    plt.xticks(rotation=45, ha='right', color='white', fontsize=10)
+    plt.yticks(color='white', fontsize=10)
+    plt.grid(True, which='both', color='gray', linestyle='--', linewidth=0.6)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("gray")
+    ax.spines["bottom"].set_color("gray")
+
+    handles, labels = barplot.get_legend_handles_labels()  # Obtendo handles e labels
+    ax.legend(handles, labels, title='', fontsize=12, loc='upper left', frameon=True, facecolor='#bbb', edgecolor='gray')
+
+
+    if list_legends:
+        legend = ax.legend(list_legends, fontsize=12)
+        legend.get_frame().set_facecolor('#bbb')
+        legend.get_frame().set_edgecolor('gray')
+
+    plt.tight_layout()
+    st.pyplot(fig)
+
+# Função para criar o gráfico
+def lineplot(data, days_filters):
     sns.set_theme(style="whitegrid", context="talk", palette="deep", rc={"axes.facecolor": "#1a1a1a", "grid.color": "gray"})
 
     sorted_dates = [item[0] for item in data]
@@ -76,7 +142,7 @@ def plot_data(data, days_filters):
 
     interval_xaxis = 1 if days_filters==7 else 4
     date_formatter = "%A" if days_filters==7 else '%d/%m'
-    xlabel = "Dia" if days_filters==7 else 'Data'
+    title = f'{sorted_dates[-1].strftime("%d/%m/%Y")} - {sorted_dates[0].strftime("%d/%m/%Y")}' if days_filters==7 else f'{sorted_dates[0].strftime("%d/%m/%Y")} - {sorted_dates[-1].strftime("%d/%m/%Y")}'
 
     for date, count in data:
         cumulative_sum = count
@@ -87,7 +153,6 @@ def plot_data(data, days_filters):
     fig.patch.set_facecolor('#1a1a1a')  # Fundo da figura
     ax.set_facecolor('#1a1a1a')  # Fundo do gráfico
 
-    #plt.plot(sorted_dates, cumulative_counts, marker='o', linestyle='-', color='blue', label='Quantidade')
     sns.lineplot(x=sorted_dates, y=cumulative_counts, marker='o', color='cyan', linewidth=2.5, ax=ax)
 
     y_max = max(cumulative_counts)
@@ -107,12 +172,10 @@ def plot_data(data, days_filters):
         ax.axvline(x=cutoff_date, color='cyan', linestyle='--', label='Abertura ao público')
         list_legends.append('Abertura ao público')
 
-    #ax.set_xlabel('Data', color='white', fontsize=12)
-    #ax.set_ylabel('Quantidade de execuções', color='white', fontsize=12)
-    #plt.title('Calculadora de Aposentadoria', color='white', fontsize=16)
     plt.xticks(rotation=45, ha='right', color='white', fontsize=10)
     plt.yticks(color='white', fontsize=10)
     plt.grid(True, which='both', color='gray', linestyle='--', linewidth=0.6)
+    plt.title(title, fontsize=12, color="#bbb")
     
     # Remover bordas superiores e direitas
     ax.spines["top"].set_visible(False)
@@ -135,10 +198,18 @@ st.markdown("### Calculadora de Aposentadoria: Execuções")  # Título grande (
 
 # Opções de filtro
 st.sidebar.header("Filtros")
+
+filter_option_init = st.sidebar.selectbox(
+    "Dados visualizados",
+    ("Dados totais", "Dados sem token", "Dados com token")
+)
+
 filter_option = st.sidebar.selectbox(
     "Selecione o intervalo de tempo",
     ("Últimos 7 dias", "Últimos 30 dias", "Últimos 90 dias")
 )
+
+
 
 # Mapear a opção selecionada para um número de dias
 days_map = {
@@ -151,9 +222,16 @@ days = days_map[filter_option]
 # Obter os dados da API
 data = fetch_data()
 
-# Processar os dados
-date_counts = process_data(data)
+data_map = {
+    "Dados totais": process_data(data),
+    "Dados sem token": process_data(data, application_cutoff_date="Depois"), 
+    "Dados com token": process_data(data, application_cutoff_date="Antes")
+}
 
+# Processar os dados
+date_counts = data_map[filter_option_init]
+
+selected_options = []
 # Aplicar a lógica de filtragem com base na escolha
 if filter_option == "Últimos 7 dias":
     weeks = sorted_dict(split_by_weeks(date_counts))
@@ -162,6 +240,7 @@ if filter_option == "Últimos 7 dias":
         list(weeks.keys())
     )
     selected_data = weeks[week_choice]
+    selected_options = weeks
 
 elif filter_option == "Últimos 30 dias":
     months = sorted_dict(split_by_months(date_counts))
@@ -170,6 +249,7 @@ elif filter_option == "Últimos 30 dias":
         list(months.keys())
     )
     selected_data = months[month_choice]
+    selected_options = months
 
 elif filter_option == "Últimos 90 dias":
     quarters = sorted_dict(split_by_quarters(date_counts))
@@ -178,9 +258,19 @@ elif filter_option == "Últimos 90 dias":
         list(quarters.keys())
     )
     selected_data = quarters[quarter_choice]
+    selected_options = quarters
+
+st.subheader("Por dia:")  # Título grande (nível 1)
 
 # Plotar os dados filtrados
 if selected_data:
-    plot_data(selected_data, days)
+    lineplot(selected_data, days)
+else:
+    st.write("Nenhum dado disponível para o intervalo selecionado.")
+
+st.subheader("Somadas:") 
+# Plotar os dados filtrados
+if selected_options:
+    bar(selected_options, days)
 else:
     st.write("Nenhum dado disponível para o intervalo selecionado.")
