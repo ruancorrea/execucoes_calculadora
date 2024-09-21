@@ -13,19 +13,25 @@ def fetch_data():
     response = requests.get(url)
     return response.json()
 
+# Função para coletar todos os estados
+def get_states(data):
+    states = set(item.get("state") for item in data if item.get("state"))
+    return sorted(list(states))
+
 # Função para processar os dados
-def process_data(data, application_cutoff_date=None):
+def process_data(data, application_cutoff_date=None, selected_state=None):
     date_counts = defaultdict(int)
     cutoff_date = datetime.date(2024, 8, 26)
     for item in data:
         timestamp_str = item.get("timeStamp")
-        if timestamp_str:
+        state = item.get("state")  # Supondo que o campo de estado é "state"
+        if timestamp_str and (selected_state == "Geral" or selected_state == state):
             timestamp = datetime.datetime.fromisoformat(timestamp_str.replace("Z", "+00:00")).date()
             if application_cutoff_date == "Depois":
-                if timestamp >= cutoff_date: 
+                if timestamp >= cutoff_date:
                     date_counts[timestamp] += 1
             elif application_cutoff_date == "Antes":
-                if timestamp < cutoff_date: 
+                if timestamp < cutoff_date:
                     date_counts[timestamp] += 1
             else:
                 date_counts[timestamp] += 1
@@ -34,19 +40,20 @@ def process_data(data, application_cutoff_date=None):
 # Função para dividir os dados em semanas
 def split_by_weeks(date_counts):
     sorted_dates = sorted(date_counts.keys())
-    initial_date = sorted_dates[0]
-    date = sorted_dates[-1]
     weeks = defaultdict(list)
-    week_num= (date - initial_date).days // 7 + 1 
-    i = 0
+    if len(sorted_dates) > 0:
+        initial_date = sorted_dates[0]
+        date = sorted_dates[-1]
+        week_num= (date - initial_date).days // 7 + 1 
+        i = 0
 
-    while date >= initial_date:
-        if i == 7:
-            week_num -= 1
-            i = 0
-        weeks[f"Semana {week_num}"].append((date, date_counts[date]))
-        date = date + datetime.timedelta(days=-1)
-        i+= 1
+        while date >= initial_date:
+            if i == 7:
+                week_num -= 1
+                i = 0
+            weeks[f"Semana {week_num}"].append((date, date_counts[date]))
+            date = date + datetime.timedelta(days=-1)
+            i+= 1
 
     #print(weeks)
     return weeks
@@ -207,6 +214,49 @@ def lineplot(data, days_filters):
 
     st.pyplot(plt)
 
+# Função para contar as execuções por estado
+def count_executions_by_state(data):
+    state_counts = defaultdict(int)
+    for item in data:
+        state = item.get("state")
+        if state and state != "Não informado":
+            state_counts[state] += 1
+    return state_counts
+
+# Função para exibir o gráfico de barras de execuções por estado
+def bar_by_state(state_counts):
+    sns.set_theme(style="whitegrid", context="talk", palette="deep", rc={"axes.facecolor": "#1a1a1a", "grid.color": "gray"})
+
+    # Preparar os dados para o gráfico
+    states = list(state_counts.keys())
+    counts = list(state_counts.values())
+
+    fig, ax = plt.subplots(figsize=(12, 7))
+    fig.patch.set_facecolor('#1a1a1a')  # Fundo da figura
+    ax.set_facecolor('#1a1a1a')  # Fundo do gráfico
+
+    barplot = sns.barplot(x=states, y=counts, palette='Paired', ax=ax)
+
+    # Adicionar os valores em cima de cada barra
+    for i, count in enumerate(counts):
+        barplot.text(i, count + (0.05 * max(counts)), str(count), ha='center', va='bottom', fontweight='bold', color='white')
+
+    # Personalizar o gráfico
+    plt.xticks(rotation=45, ha='right', color='white', fontsize=10)
+    plt.yticks(color='white', fontsize=10)
+    plt.grid(True, which='both', color='gray', linestyle='--', linewidth=0.6)
+    plt.xlabel('Estados', color='white', fontsize=12)
+    plt.ylabel('Execuções', color='white', fontsize=12)
+
+    # Remover bordas superiores e direitas
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("gray")
+    ax.spines["bottom"].set_color("gray")
+
+    plt.tight_layout()
+    st.pyplot(fig)
+
 def metricHours(cumulative_sum):
     hours = cumulative_sum * 2.5
     if hours == int(hours):
@@ -231,16 +281,16 @@ def info_cards(data, title= ''):
 
     with col1:
         hours = metricHours(cumulative_sum)
-        text = f':red[{hours} horas poupadas]' if title == 'Panorama geral' else f'{hours} horas poupadas'
+        text = f':red[{hours} horas poupadas]' if 'Panorama' in title else f'{hours} horas poupadas'
         st.info(text, icon=":material/clock_loader_40:")
         
     with col2:
         money = metricMoney(cumulative_sum)
-        text = f':red[R$ {money} economizados]' if title == 'Panorama geral' else f'R$ {money} economizados'
+        text = f':red[R$ {money} economizados]' if 'Panorama' in title else f'R$ {money} economizados'
         st.info(text, icon=":material/payments:" )
 
     with col3:
-        text = f':red[{cumulative_sum} cálculos realizados]' if title == 'Panorama geral' else f'{cumulative_sum} cálculos realizados'
+        text = f':red[{cumulative_sum} cálculos realizados]' if 'Panorama' in title else f'{cumulative_sum} cálculos realizados'
         st.info(text, icon=":material/left_click:")
 
 # Streamlit App
@@ -268,12 +318,21 @@ filter_option_init = st.sidebar.selectbox(
     ("Dados totais", "Dados sem token", "Dados com token")
 )
 
+# Obter os dados da API
+data = fetch_data()
+
+# Coletar a lista de estados e adicionar ao filtro
+states = get_states(data)
+states.insert(0, "Geral")  # Adicionar a opção "Geral" para incluir todos os estados
+selected_state = st.sidebar.selectbox(
+    "Selecione o estado",
+    states
+)
+
 filter_option = st.sidebar.selectbox(
     "Selecione o intervalo de tempo",
     ("Últimos 7 dias", "Últimos 30 dias", "Últimos 90 dias")
 )
-
-
 
 # Mapear a opção selecionada para um número de dias
 days_map = {
@@ -283,19 +342,18 @@ days_map = {
 }
 days = days_map[filter_option]
 
-# Obter os dados da API
-data = fetch_data()
 
 data_map = {
-    "Dados totais": process_data(data),
-    "Dados sem token": process_data(data, application_cutoff_date="Depois"), 
-    "Dados com token": process_data(data, application_cutoff_date="Antes")
+    "Dados totais": process_data(data, selected_state=selected_state),
+    "Dados sem token": process_data(data, application_cutoff_date="Depois", selected_state=selected_state),
+    "Dados com token": process_data(data, application_cutoff_date="Antes", selected_state=selected_state)
 }
 
 # Processar os dados
 date_counts = data_map[filter_option_init]
 option_type = ''
 selected_options = []
+selected_data = []
 # Aplicar a lógica de filtragem com base na escolha
 if filter_option == "Últimos 7 dias":
     weeks = sorted_dict(split_by_weeks(date_counts))
@@ -303,7 +361,8 @@ if filter_option == "Últimos 7 dias":
         "Selecione a semana",
         list(weeks.keys())
     )
-    selected_data = weeks[option_type]
+    if len(weeks) > 0:
+        selected_data = weeks[option_type]
     selected_options = weeks
 
 elif filter_option == "Últimos 30 dias":
@@ -312,7 +371,8 @@ elif filter_option == "Últimos 30 dias":
         "Selecione o mês",
         list(months.keys())
     )
-    selected_data = months[option_type]
+    if len(months) > 0:
+        selected_data = months[option_type]
     selected_options = months
 
 elif filter_option == "Últimos 90 dias":
@@ -321,7 +381,8 @@ elif filter_option == "Últimos 90 dias":
         "Selecione o trimestre",
         list(quarters.keys())
     )
-    selected_data = quarters[option_type]
+    if len(quarters) > 0:
+        selected_data = quarters[option_type]
     selected_options = quarters
 
 
@@ -334,10 +395,19 @@ else:
     st.write("Nenhum dado disponível para o intervalo selecionado.")
 
 
-info_cards(split_by_total(date_counts), title="Panorama geral")
+info_cards(split_by_total(date_counts), title=f"Panorama {selected_state}")
 
 # Plotar os dados filtrados
 if selected_options:
     bar(selected_options, days)
 else:
     st.write("Nenhum dado disponível para o intervalo selecionado.")
+
+'''
+# Contar execuções por estado
+state_counts = count_executions_by_state(selected_data) #, selected_state)
+
+# Exibir o gráfico de barras com execuções por estado
+st.subheader("Execuções por Estado")
+bar_by_state(state_counts)
+'''
