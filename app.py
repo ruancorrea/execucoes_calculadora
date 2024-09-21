@@ -6,7 +6,7 @@ import matplotlib.dates as mdates
 import seaborn as sns
 from collections import defaultdict, OrderedDict
 
-# Função para obter dados da API
+@st.cache_data
 def fetch_data():
     url = "https://apiresidenciaadministrativa.jfal.jus.br/api/v1/execution"
     response = requests.get(url)
