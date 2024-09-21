@@ -210,7 +210,7 @@ def lineplot(data, days_filters):
 def metricHours(cumulative_sum):
     hours = cumulative_sum * 2.5
     if hours == int(hours):
-        return str(int(hours))
+        return f"{hours:_.0f}".replace("_", ".")
     hours_format = f"{hours:_.2f}"       # Agora formata como string
     hours_format = hours_format.replace(".", ",").replace("_", ".")
     return hours_format
@@ -218,7 +218,7 @@ def metricHours(cumulative_sum):
 def metricMoney(cumulative_sum):
     money = round(cumulative_sum * 2.5 * 99.91, 2)  # Calcula o valor primeiro
     if money == int(money):
-        return str(int(money))
+        return f"{money:_.0f}".replace("_", ".")
     money_format = f"{money:_.2f}"       # Agora formata como string
     money_format = money_format.replace(".", ",").replace("_", ".")
     return money_format
