@@ -36,16 +36,19 @@ def split_by_weeks(date_counts):
     sorted_dates = sorted(date_counts.keys())
     initial_date = sorted_dates[0]
     date = sorted_dates[-1]
-    initial_date = sorted_dates[0]
     weeks = defaultdict(list)
-    i = len(sorted_dates) + 7
+    week_num= (date - initial_date).days // 7 + 1 
+    i = 0
 
     while date >= initial_date:
-        week_num = i // 7 + 1
+        if i == 7:
+            week_num -= 1
+            i = 0
         weeks[f"Semana {week_num}"].append((date, date_counts[date]))
         date = date + datetime.timedelta(days=-1)
-        i-= 1
+        i+= 1
 
+    #print(weeks)
     return weeks
 
 # Função para dividir os dados em meses (30 dias)
@@ -69,6 +72,15 @@ def split_by_quarters(date_counts):
         quarters[f"Trimestre {quarter_num}"].append((date, date_counts[date]))
     
     return quarters
+
+def split_by_total(date_counts):
+    sorted_dates = sorted(date_counts.keys())
+    total = defaultdict(list)
+    
+    for i, date in enumerate(sorted_dates):
+        total_num = i // len(date_counts) + 1
+        total[total_num].append((date, date_counts[date]))
+    return total[1]
 
 def sorted_dict(data):
     sorted_keys = sorted(data.keys(), key=lambda x: int(x.split()[1]), reverse=True)
@@ -114,6 +126,8 @@ def bar(data, title="Gráfico de Barras", list_legends=None):
     plt.xticks(rotation=45, ha='right', color='white', fontsize=10)
     plt.yticks(color='white', fontsize=10)
     plt.grid(True, which='both', color='gray', linestyle='--', linewidth=0.6)
+    plt.xlabel('')
+    plt.ylabel('')
 
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -193,8 +207,58 @@ def lineplot(data, days_filters):
 
     st.pyplot(plt)
 
+def metricHours(cumulative_sum):
+    hours = cumulative_sum * 2.5
+    if hours == int(hours):
+        return str(int(hours))
+    hours_format = f"{hours:_.2f}"       # Agora formata como string
+    hours_format = hours_format.replace(".", ",").replace("_", ".")
+    return hours_format
+
+def metricMoney(cumulative_sum):
+    money = round(cumulative_sum * 2.5 * 99.91, 2)  # Calcula o valor primeiro
+    if money == int(money):
+        return str(int(money))
+    money_format = f"{money:_.2f}"       # Agora formata como string
+    money_format = money_format.replace(".", ",").replace("_", ".")
+    return money_format
+
+def info_cards(data, title= ''):
+    st.subheader(title)
+    col1, col2, col3 = st.columns(3)
+
+    cumulative_sum = sum(count for date, count in data)
+
+    with col1:
+        hours = metricHours(cumulative_sum)
+        text = f':red[{hours} horas poupadas]' if title == 'Panorama geral' else f'{hours} horas poupadas'
+        st.info(text, icon=":material/clock_loader_40:")
+        
+    with col2:
+        money = metricMoney(cumulative_sum)
+        text = f':red[R$ {money} economizados]' if title == 'Panorama geral' else f'R$ {money} economizados'
+        st.info(text, icon=":material/payments:" )
+
+    with col3:
+        text = f':red[{cumulative_sum} cálculos realizados]' if title == 'Panorama geral' else f'{cumulative_sum} cálculos realizados'
+        st.info(text, icon=":material/left_click:")
+
 # Streamlit App
-st.markdown("### Calculadora de Aposentadoria: Execuções")  # Título grande (nível 1)
+st.markdown(
+    """
+    <h1> Calculadora de Aposentadoria: Execuções </h1>
+    <style>
+    .main .block-container{
+        max-width: 80%; /* Defina a largura desejada */
+        padding-top: 3rem;
+        padding-bottom: 3rem;
+        padding-left: 3rem;
+        padding-right: 3rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # Opções de filtro
 st.sidebar.header("Filtros")
@@ -230,37 +294,38 @@ data_map = {
 
 # Processar os dados
 date_counts = data_map[filter_option_init]
-
+option_type = ''
 selected_options = []
 # Aplicar a lógica de filtragem com base na escolha
 if filter_option == "Últimos 7 dias":
     weeks = sorted_dict(split_by_weeks(date_counts))
-    week_choice = st.sidebar.selectbox(
+    option_type = st.sidebar.selectbox(
         "Selecione a semana",
         list(weeks.keys())
     )
-    selected_data = weeks[week_choice]
+    selected_data = weeks[option_type]
     selected_options = weeks
 
 elif filter_option == "Últimos 30 dias":
     months = sorted_dict(split_by_months(date_counts))
-    month_choice = st.sidebar.selectbox(
+    option_type = st.sidebar.selectbox(
         "Selecione o mês",
         list(months.keys())
     )
-    selected_data = months[month_choice]
+    selected_data = months[option_type]
     selected_options = months
 
 elif filter_option == "Últimos 90 dias":
     quarters = sorted_dict(split_by_quarters(date_counts))
-    quarter_choice = st.sidebar.selectbox(
+    option_type = st.sidebar.selectbox(
         "Selecione o trimestre",
         list(quarters.keys())
     )
-    selected_data = quarters[quarter_choice]
+    selected_data = quarters[option_type]
     selected_options = quarters
 
-st.subheader("Por dia:")  # Título grande (nível 1)
+
+info_cards(selected_data, title=option_type)
 
 # Plotar os dados filtrados
 if selected_data:
@@ -268,7 +333,9 @@ if selected_data:
 else:
     st.write("Nenhum dado disponível para o intervalo selecionado.")
 
-st.subheader("Somadas:") 
+
+info_cards(split_by_total(date_counts), title="Panorama geral")
+
 # Plotar os dados filtrados
 if selected_options:
     bar(selected_options, days)
