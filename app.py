@@ -27,7 +27,7 @@ def process_data(data, application_cutoff_date=None, selected_state=None):
         timestamp_str = item.get("timeStamp")
         state = item.get("state")  # Supondo que o campo de estado é "state"
         if timestamp_str and (selected_state == "Geral" or selected_state == state):
-            timestamp = datetime.datetime.fromisoformat(timestamp_str.replace("Z", "+00:00")).date()
+            timestamp = datetime.datetime.fromisoformat(timestamp_str.replace("Z", "+00:00")).date() - datetime.timedelta(hours=3)
             if application_cutoff_date == "Depois":
                 if timestamp >= cutoff_date:
                     date_counts[timestamp] += 1
@@ -220,7 +220,7 @@ def count_executions_by_state(data, selected_state, selected_data):
     state_counts = defaultdict(int)
     sorted_dates = [item[0] for item in selected_data]
     for item in data:
-        timestamp = timestamp = datetime.datetime.fromisoformat(item.get('timeStamp').replace("Z", "+00:00")).date()
+        timestamp = timestamp = datetime.datetime.fromisoformat(item.get('timeStamp').replace("Z", "+00:00")).date() - datetime.timedelta(hours=3)
         if timestamp in sorted_dates:
             state = item.get("state")
             if state == selected_state or selected_state == "Geral" and state != "Não informado":
