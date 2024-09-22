@@ -7,7 +7,7 @@ import matplotlib.dates as mdates
 import seaborn as sns
 from collections import defaultdict, OrderedDict
 
-@st.cache_data
+@st.cache_data(ttl=60*5) # 5 minutos
 def fetch_data():
     url = "https://apiresidenciaadministrativa.jfal.jus.br/api/v1/execution"
     response = requests.get(url)
