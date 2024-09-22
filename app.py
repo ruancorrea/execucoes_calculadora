@@ -5,6 +5,7 @@ import datetime
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import seaborn as sns
+import numpy as np
 from collections import defaultdict, OrderedDict
 
 @st.cache_data(ttl=60*5) # 5 minutos
@@ -231,14 +232,16 @@ def bar_by_state(state_counts):
     sns.set_theme(style="whitegrid", context="talk", palette="deep", rc={"axes.facecolor": "#1a1a1a", "grid.color": "gray"})
 
     # Preparar os dados para o gráfico
+    state_counts = dict(sorted(state_counts.items()))
     states = list(state_counts.keys())
     counts = list(state_counts.values())
+    list_legends = ["Quantidade de execuções"]
 
     fig, ax = plt.subplots(figsize=(12, 7))
     fig.patch.set_facecolor('#1a1a1a')  # Fundo da figura
     ax.set_facecolor('#1a1a1a')  # Fundo do gráfico
 
-    barplot = sns.barplot(x=states, y=counts, hue=states, palette='Paired', width=0.4, ax=ax)
+    barplot = sns.barplot(x=states, y=counts, hue=np.zeros(len(states)), palette='Paired', width=0.4, ax=ax)
 
     # Adicionar os valores em cima de cada barra
     for i, count in enumerate(counts):
@@ -248,14 +251,19 @@ def bar_by_state(state_counts):
     plt.xticks(rotation=45, ha='right', color='white', fontsize=10)
     plt.yticks(color='white', fontsize=10)
     plt.grid(True, which='both', color='gray', linestyle='--', linewidth=0.6)
-    plt.xlabel('Estados', color='white', fontsize=12)
-    plt.ylabel('Execuções', color='white', fontsize=12)
+    #plt.xlabel('Estados', color='white', fontsize=12)
+    #plt.ylabel('Execuções', color='white', fontsize=12)
 
     # Remover bordas superiores e direitas
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_color("gray")
     ax.spines["bottom"].set_color("gray")
+
+    # Adicionar legenda com fundo escuro
+    legend = ax.legend(list_legends, fontsize=12)
+    legend.get_frame().set_facecolor('#bbbbbb')  # Cor de fundo da legenda
+    legend.get_frame().set_edgecolor('gray')  # Cor da borda da legenda
 
     plt.tight_layout()
     st.pyplot(fig)
@@ -389,7 +397,7 @@ elif filter_option == "Últimos 90 dias":
     selected_options = quarters
 
 
-info_cards(selected_data, title=option_type)
+info_cards(selected_data, title=f"{selected_state} - {option_type}")
 
 # Plotar os dados filtrados
 if selected_data:
@@ -406,9 +414,10 @@ if selected_options:
 else:
     st.write("Nenhum dado disponível para o intervalo selecionado.")
 
-# Contar execuções por estado
-state_counts = count_executions_by_state(data, selected_state, selected_data)
+if filter_option_init != "Dados com token":
+    # Contar execuções por estado
+    state_counts = count_executions_by_state(data, selected_state, selected_data)
 
-# Exibir o gráfico de barras com execuções por estado
-st.subheader("Execuções por Estado")
-bar_by_state(state_counts)
+    # Exibir o gráfico de barras com execuções por estado
+    st.subheader("Execuções por Estado")
+    bar_by_state(state_counts)
