@@ -318,7 +318,7 @@ st.sidebar.header("Filtros")
 
 filter_option_init = st.sidebar.selectbox(
     "Dados visualizados",
-    ("Dados totais", "Dados sem token", "Dados com token")
+    ("Dados sem token", "Dados totais", "Dados com token")
 )
 
 # Obter os dados da API
@@ -347,8 +347,8 @@ days = days_map[filter_option]
 
 
 data_map = {
-    "Dados totais": process_data(data, selected_state=selected_state),
     "Dados sem token": process_data(data, application_cutoff_date="Depois", selected_state=selected_state),
+    "Dados totais": process_data(data, selected_state=selected_state),
     "Dados com token": process_data(data, application_cutoff_date="Antes", selected_state=selected_state)
 }
 
