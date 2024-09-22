@@ -397,7 +397,7 @@ elif filter_option == "Últimos 90 dias":
     selected_options = quarters
 
 
-info_cards(selected_data, title=f"{selected_state} - {option_type}")
+info_cards(selected_data, title=f"{selected_state} - {option_type} ({filter_option_init})")
 
 # Plotar os dados filtrados
 if selected_data:
