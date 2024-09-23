@@ -1,12 +1,14 @@
 import streamlit as st
 import pandas as pd
 import requests
-import datetime
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import seaborn as sns
+from datetime import datetime, timedelta
 import numpy as np
-from collections import defaultdict, OrderedDict
+from collections import defaultdict
+import plotly.express as px
+import locale
+import json
+locale.setlocale(locale.LC_TIME, 'pt_BR')
+
 
 @st.cache_data(ttl=60*5) # 5 minutos
 def fetch_data():
@@ -14,259 +16,49 @@ def fetch_data():
     response = requests.get(url)
     return response.json()
 
-# Função para coletar todos os estados
-def get_states(data):
-    states = set(item.get("state") for item in data if item.get("state"))
-    return sorted(list(states))
+def loading_data():
+    data = fetch_data()
+    df = pd.DataFrame(data)
+    df['timeStamp'] = pd.to_datetime(df['timeStamp']).dt.tz_convert('America/Sao_Paulo')
+    df['duration'] = df['duration'].astype(float) 
+    df = df.rename(columns={
+        'duration': 'Execuções realizadas'
+    })
+    return df
 
-# Função para processar os dados
-def process_data(data, application_cutoff_date=None, selected_state=None):
-    date_counts = defaultdict(int)
-    cutoff_date = datetime.date(2024, 8, 26)
-    for item in data:
-        timestamp_str = item.get("timeStamp")
-        state = item.get("state")  # Supondo que o campo de estado é "state"
-        if timestamp_str and (selected_state == "Geral" or selected_state == state):
-            timestamp = datetime.datetime.fromisoformat(timestamp_str.replace("Z", "+00:00")).date() - datetime.timedelta(hours=3)
-            if application_cutoff_date == "Depois":
-                if timestamp >= cutoff_date:
-                    date_counts[timestamp] += 1
-            elif application_cutoff_date == "Antes":
-                if timestamp < cutoff_date:
-                    date_counts[timestamp] += 1
-            else:
-                date_counts[timestamp] += 1
-    return date_counts
+def process_data(df, type_data_visualization, selected_state):
+    cutoff_date = pd.Timestamp(2024, 8, 26).date()
 
-# Função para dividir os dados em semanas
-def split_by_weeks(date_counts):
-    sorted_dates = sorted(date_counts.keys())
-    weeks = defaultdict(list)
+    df = df[df['state'] == selected_state] if selected_state != 'Geral' else df
+    if type_data_visualization != "Dados totais":
+        df = df[df['timeStamp'].dt.date >= cutoff_date if type_data_visualization == "Aberto ao público" else df['timeStamp'].dt.date < cutoff_date] 
+    
+    return df
+
+def split_by_interval(df, interval, type_interval):
+    date_counts = df['timeStamp'].dt.date.value_counts()
+    sorted_dates = sorted(date_counts.keys(), reverse=True)
+
+    interval_dates = defaultdict(list)
     if len(sorted_dates) > 0:
-        initial_date = sorted_dates[0]
-        date = sorted_dates[-1]
-        week_num= (date - initial_date).days // 7 + 1 
+        initial_date = sorted_dates[-1]
+        date = sorted_dates[0]
+        interval_num= (date - initial_date).days // interval + 1 
         i = 0
 
         while date >= initial_date:
-            if i == 7:
-                week_num -= 1
+            if i == interval:
+                interval_num -= 1
                 i = 0
-            weeks[f"Semana {week_num}"].append((date, date_counts[date]))
-            date = date + datetime.timedelta(days=-1)
-            i+= 1
+            try:
+                days = int(date_counts[date]) 
+            except:
+                days = 0 
+            interval_dates[f"{type_interval} {interval_num}"].append((date, days))
+            date = date + timedelta(days=-1)
+            i += 1
 
-    #print(weeks)
-    return weeks
-
-# Função para dividir os dados em meses (30 dias)
-def split_by_months(date_counts):
-    sorted_dates = sorted(date_counts.keys())
-    months = defaultdict(list)
-    
-    for i, date in enumerate(sorted_dates):
-        month_num = i // 30 + 1
-        months[f"Mês {month_num}"].append((date, date_counts[date]))
-    
-    return months
-
-# Função para dividir os dados em trimestres (90 dias)
-def split_by_quarters(date_counts):
-    sorted_dates = sorted(date_counts.keys())
-    quarters = defaultdict(list)
-    
-    for i, date in enumerate(sorted_dates):
-        quarter_num = i // 90 + 1
-        quarters[f"Trimestre {quarter_num}"].append((date, date_counts[date]))
-    
-    return quarters
-
-def split_by_total(date_counts):
-    sorted_dates = sorted(date_counts.keys())
-    total = defaultdict(list)
-    
-    for i, date in enumerate(sorted_dates):
-        total_num = i // len(date_counts) + 1
-        total[total_num].append((date, date_counts[date]))
-    return total[1]
-
-def sorted_dict(data):
-    sorted_keys = sorted(data.keys(), key=lambda x: int(x.split()[1]), reverse=True)
-    ordered_data = OrderedDict((key, data[key]) for key in sorted_keys)
-    return ordered_data
-
-# Função para criar o gráfico
-def bar(data, title="Gráfico de Barras", list_legends=None):
-    sns.set_theme(style="whitegrid", context="talk", palette="deep", rc={"axes.facecolor": "#1a1a1a", "grid.color": "gray"})
-
-    fig, ax = plt.subplots(figsize=(12, 7))
-    fig.patch.set_facecolor('#1a1a1a')  # Fundo da figura
-    ax.set_facecolor('#1a1a1a')  # Fundo do gráfico
-
-    # Transformar os dados em um DataFrame
-    weeks = []
-    counts = []
-    disponibility = []
-    cutoff_date = datetime.date(2024, 8, 26)
-    for week, values in data.items():
-        total_count = 0
-        disp = "Protegido por token"
-        for date, count in values:
-            total_count += count
-            if date >= cutoff_date :
-                disp = "Aberto ao público"
-        weeks.append(week)
-        counts.append(total_count)
-        disponibility.append(disp)
-
-    weeks.reverse()
-    counts.reverse()
-    disponibility.reverse()
-    data = pd.DataFrame({'Interval': weeks, 'Count': counts, 'Disponiility': disponibility})
-    
-    barplot = sns.barplot(x='Interval', y='Count', hue='Disponiility', data=data, palette='Paired', width=0.4, legend=True)
-
-    for i in range(len(data)):
-        count_value = data['Count'][i]
-        barplot.text(i, count_value + (0.05 * max(data['Count'])), str(count_value), ha='center', va='bottom', fontweight='bold', color='white')
-
-    #plt.title(title, color='white', fontsize=16)
-    plt.xticks(rotation=45, ha='right', color='white', fontsize=10)
-    plt.yticks(color='white', fontsize=10)
-    plt.grid(True, which='both', color='gray', linestyle='--', linewidth=0.6)
-    plt.xlabel('')
-    plt.ylabel('')
-
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color("gray")
-    ax.spines["bottom"].set_color("gray")
-
-    handles, labels = barplot.get_legend_handles_labels()  # Obtendo handles e labels
-    ax.legend(handles, labels, title='', fontsize=12, loc='upper left', frameon=True, facecolor='#bbb', edgecolor='gray')
-
-
-    if list_legends:
-        legend = ax.legend(list_legends, fontsize=12)
-        legend.get_frame().set_facecolor('#bbb')
-        legend.get_frame().set_edgecolor('gray')
-
-    plt.tight_layout()
-    st.pyplot(fig)
-
-# Função para criar o gráfico
-def lineplot(data, days_filters):
-    sns.set_theme(style="whitegrid", context="talk", palette="deep", rc={"axes.facecolor": "#1a1a1a", "grid.color": "gray"})
-
-    sorted_dates = [item[0] for item in data]
-    cumulative_counts = []
-    cumulative_sum = 0
-
-    interval_xaxis = 1 if days_filters==7 else 4
-    date_formatter = "%A" if days_filters==7 else '%d/%m'
-    title = f'{sorted_dates[-1].strftime("%d/%m/%Y")} - {sorted_dates[0].strftime("%d/%m/%Y")}' if days_filters==7 else f'{sorted_dates[0].strftime("%d/%m/%Y")} - {sorted_dates[-1].strftime("%d/%m/%Y")}'
-
-    for date, count in data:
-        cumulative_sum = count
-        cumulative_counts.append(cumulative_sum)
-
-    # Configurar o fundo da figura toda
-    fig, ax = plt.subplots(figsize=(12, 7))
-    fig.patch.set_facecolor('#1a1a1a')  # Fundo da figura
-    ax.set_facecolor('#1a1a1a')  # Fundo do gráfico
-
-    sns.lineplot(x=sorted_dates, y=cumulative_counts, marker='o', color='cyan', linewidth=2.5, ax=ax)
-
-    y_max = max(cumulative_counts)
-    offset = y_max * 0.03  # Ajuste de 3% baseado no valor máximo do eixo Y
-
-    # Adicionando os valores em cima de cada ponto
-    for i, (date, count) in enumerate(data):
-        y_pos = cumulative_counts[i] + offset  # Deslocamento dinâmico acima do ponto
-        ax.text(sorted_dates[i], y_pos, f'{count}', color='white', ha='center', fontsize=12)
-    
-    ax.xaxis.set_major_formatter(mdates.DateFormatter(date_formatter))
-    ax.xaxis.set_major_locator(mdates.DayLocator(interval=interval_xaxis))
-
-    list_legends = ["Quantidade de execuções"]
-    cutoff_date = datetime.date(2024, 8, 26)
-    if cutoff_date in sorted_dates:
-        ax.axvline(x=cutoff_date, color='cyan', linestyle='--', label='Abertura ao público')
-        list_legends.append('Abertura ao público')
-
-    plt.xticks(rotation=45, ha='right', color='white', fontsize=10)
-    plt.yticks(color='white', fontsize=10)
-    plt.grid(True, which='both', color='gray', linestyle='--', linewidth=0.6)
-    plt.title(title, fontsize=12, color="#bbb")
-    
-    # Remover bordas superiores e direitas
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color("gray")
-    ax.spines["bottom"].set_color("gray")
-
-    # Adicionar legenda com fundo escuro
-    legend = ax.legend(list_legends, fontsize=12)
-    legend.get_frame().set_facecolor('#bbbbbb')  # Cor de fundo da legenda
-    legend.get_frame().set_edgecolor('gray')  # Cor da borda da legenda
-
-    # Layout otimizado
-    plt.tight_layout()
-
-    st.pyplot(plt)
-
-# Função para contar as execuções por estado
-def count_executions_by_state(data, selected_state, selected_data):
-    state_counts = defaultdict(int)
-    sorted_dates = [item[0] for item in selected_data]
-    for item in data:
-        timestamp = timestamp = datetime.datetime.fromisoformat(item.get('timeStamp').replace("Z", "+00:00")).date() - datetime.timedelta(hours=3)
-        if timestamp in sorted_dates:
-            state = item.get("state")
-            if state == selected_state or selected_state == "Geral" and state != "Não informado":
-                state_counts[state] += 1
-    return state_counts
-
-# Função para exibir o gráfico de barras de execuções por estado
-def bar_by_state(state_counts):
-    sns.set_theme(style="whitegrid", context="talk", palette="deep", rc={"axes.facecolor": "#1a1a1a", "grid.color": "gray"})
-
-    # Preparar os dados para o gráfico
-    state_counts = dict(sorted(state_counts.items()))
-    states = list(state_counts.keys())
-    counts = list(state_counts.values())
-    list_legends = ["Quantidade de execuções"]
-
-    fig, ax = plt.subplots(figsize=(12, 7))
-    fig.patch.set_facecolor('#1a1a1a')  # Fundo da figura
-    ax.set_facecolor('#1a1a1a')  # Fundo do gráfico
-
-    barplot = sns.barplot(x=states, y=counts, hue=np.zeros(len(states)), palette='Paired', width=0.4, ax=ax)
-
-    # Adicionar os valores em cima de cada barra
-    for i, count in enumerate(counts):
-        barplot.text(i, count + (0.05 * max(counts)), str(count), ha='center', va='bottom', fontweight='bold', color='white')
-
-    # Personalizar o gráfico
-    plt.xticks(rotation=45, ha='right', color='white', fontsize=10)
-    plt.yticks(color='white', fontsize=10)
-    plt.grid(True, which='both', color='gray', linestyle='--', linewidth=0.6)
-    #plt.xlabel('Estados', color='white', fontsize=12)
-    #plt.ylabel('Execuções', color='white', fontsize=12)
-
-    # Remover bordas superiores e direitas
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color("gray")
-    ax.spines["bottom"].set_color("gray")
-
-    # Adicionar legenda com fundo escuro
-    legend = ax.legend(list_legends, fontsize=12)
-    legend.get_frame().set_facecolor('#bbbbbb')  # Cor de fundo da legenda
-    legend.get_frame().set_edgecolor('gray')  # Cor da borda da legenda
-
-    plt.tight_layout()
-    st.pyplot(fig)
+    return interval_dates
 
 def metricHours(cumulative_sum):
     hours = cumulative_sum * 2.5
@@ -284,140 +76,181 @@ def metricMoney(cumulative_sum):
     money_format = money_format.replace(".", ",").replace("_", ".")
     return money_format
 
-def info_cards(data, title= ''):
+def metrics_cards(cumulative_sum, title, delta=None, color='gray'):
     st.subheader(title)
     col1, col2, col3 = st.columns(3)
-
-    cumulative_sum = sum(count for date, count in data)
-
     with col1:
         hours = metricHours(cumulative_sum)
-        text = f':red[{hours} horas poupadas]' if 'Panorama' in title else f'{hours} horas poupadas'
-        st.info(text, icon=":material/clock_loader_40:")
+        st.metric(label=f":{color}[:material/clock_loader_40: Oportunidade de custo]", value=hours)
+
         
     with col2:
         money = metricMoney(cumulative_sum)
-        text = f':red[R$ {money} economizados]' if 'Panorama' in title else f'R$ {money} economizados'
-        st.info(text, icon=":material/payments:" )
+        st.metric(label=f":{color}[ :material/payments: Impacto econômico]", value=money)
 
     with col3:
-        text = f':red[{cumulative_sum} cálculos realizados]' if 'Panorama' in title else f'{cumulative_sum} cálculos realizados'
-        st.info(text, icon=":material/left_click:")
+        st.metric(label=f":{color}[ :material/left_click:  Cálculos realizados]", value=cumulative_sum, delta=delta )
 
-# Streamlit App
-st.markdown(
-    """
-    <h1> Calculadora de Aposentadoria: Execuções </h1>
-    <style>
-    .main .block-container{
-        max-width: 80%; /* Defina a largura desejada */
-        padding-top: 3rem;
-        padding-bottom: 3rem;
-        padding-left: 3rem;
-        padding-right: 3rem;
+
+def info_cards(dfs, index_atual, title= ''):
+    delta = 0
+    keys = list(dfs.keys())
+    df = dfs[keys[index_atual]]
+    cumulative_sum = int(sum(df['Execuções realizadas']))
+    if index_atual < len(dfs) - 1:
+        df_anterior=dfs[keys[index_atual+1]]
+        cumulative_sum_anterior = int(sum(df_anterior['Execuções realizadas']))
+        delta=round(cumulative_sum * 100 / cumulative_sum_anterior, 2)
+        delta= f"{delta:_.2f} %"
+        delta = delta.replace(".", ",").replace("_", ".")
+
+    metrics_cards(cumulative_sum, title, delta)
+
+
+def map(df):
+    df = df[df['state'] != "Não informado"]
+
+    df_map=df.groupby('state').agg({'Execuções realizadas': 'sum'}).reset_index()
+    df_map['Execuções realizadas'] = df_map['Execuções realizadas'].astype(int) 
+    with open('br_states.json', 'r', encoding='utf-8') as f:
+        brasil_geo = json.load(f)
+    
+    fig = px.choropleth_mapbox(
+        df_map,
+        geojson=brasil_geo,
+        locations='state',
+        featureidkey='geometry_name',  # Ajustado para 'sigla'
+        color='Execuções realizadas',
+        color_continuous_scale="Blues",
+        mapbox_style="carto-positron",
+        zoom=3,
+        center={"lat": -15.7801, "lon": -47.9292},
+        opacity=0.7,
+        labels={'Execuções realizadas': 'Execuções realizadas'}
+    )
+
+    # Ajustar layout do mapa
+    fig.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
+
+    # Mostrar o mapa no Streamlit
+    st.plotly_chart(fig)
+
+def bar_hour(df):
+
+    # Extrair hora e data
+    df['hour'] = df['timeStamp'].dt.strftime('%H:00')  # Formatar como 'HH:00'
+
+    # Contar execuções por hora
+    execucoes_por_hora = df.groupby('hour').size().reset_index(name='execucoes')
+
+    # Criar gráfico com Plotly
+    fig = px.bar(
+        execucoes_por_hora,
+        x='hour',
+        y='execucoes',
+        labels={'hour': 'Horário', 'execucoes': 'Número de Execuções'},
+        color='execucoes',
+        color_continuous_scale='Blues'
+    )
+
+    st.plotly_chart(fig)
+
+if __name__ == "__main__":
+
+    df = loading_data()
+
+    # Streamlit App
+    st.markdown(
+        """
+        <h1> Calculadora de Aposentadoria </h1>
+        <style>
+        .main .block-container{
+            max-width: 80%; /* Defina a largura desejada */
+            padding-top: 3rem;
+            padding-bottom: 3rem;
+            padding-left: 3rem;
+            padding-right: 3rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.sidebar.header("Filtros")
+
+    filter_type_data = st.sidebar.selectbox(
+        "Dados visualizados",
+        ("Aberto ao público", "Dados totais", "Com token")
+    )
+
+    states = list(df[df['state'] != "Não informado"]['state'].sort_values().unique())
+    states.insert(0, "Geral")
+    selected_state = st.sidebar.selectbox(
+        "Selecione o estado",
+        states
+    )
+
+    filter_option = st.sidebar.selectbox(
+        "Selecione o intervalo de tempo",
+        ("Por semana", "Por mês", "Por trimestre")
+    )
+
+    # Mapear a opção selecionada para um número de dias
+    days_map = {
+        "Por semana": 7,
+        "Por mês": 30,
+        "Por trimestre": 90
     }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# Opções de filtro
-st.sidebar.header("Filtros")
-
-filter_option_init = st.sidebar.selectbox(
-    "Dados visualizados",
-    ("Dados sem token", "Dados totais", "Dados com token")
-)
-
-# Obter os dados da API
-data = fetch_data()
-
-# Coletar a lista de estados e adicionar ao filtro
-states = get_states(data)
-states.insert(0, "Geral")  # Adicionar a opção "Geral" para incluir todos os estados
-selected_state = st.sidebar.selectbox(
-    "Selecione o estado",
-    states
-)
-
-filter_option = st.sidebar.selectbox(
-    "Selecione o intervalo de tempo",
-    ("Últimos 7 dias", "Últimos 30 dias", "Últimos 90 dias")
-)
-
-# Mapear a opção selecionada para um número de dias
-days_map = {
-    "Últimos 7 dias": 7,
-    "Últimos 30 dias": 30,
-    "Últimos 90 dias": 90
-}
-days = days_map[filter_option]
+    days = days_map[filter_option]
+    df = process_data(df, type_data_visualization=filter_type_data, selected_state=selected_state)
+    interval_dates = split_by_interval(df, interval=days, type_interval=filter_option[4:].capitalize())
 
 
-data_map = {
-    "Dados sem token": process_data(data, application_cutoff_date="Depois", selected_state=selected_state),
-    "Dados totais": process_data(data, selected_state=selected_state),
-    "Dados com token": process_data(data, application_cutoff_date="Antes", selected_state=selected_state)
-}
-
-# Processar os dados
-date_counts = data_map[filter_option_init]
-option_type = ''
-selected_options = []
-selected_data = []
-# Aplicar a lógica de filtragem com base na escolha
-if filter_option == "Últimos 7 dias":
-    weeks = sorted_dict(split_by_weeks(date_counts))
     option_type = st.sidebar.selectbox(
-        "Selecione a semana",
-        list(weeks.keys())
+        f"Selecione o {filter_option[4:]}",
+        list(interval_dates.keys())
     )
-    if len(weeks) > 0:
-        selected_data = weeks[option_type]
-    selected_options = weeks
 
-elif filter_option == "Últimos 30 dias":
-    months = sorted_dict(split_by_months(date_counts))
-    option_type = st.sidebar.selectbox(
-        "Selecione o mês",
-        list(months.keys())
-    )
-    if len(months) > 0:
-        selected_data = months[option_type]
-    selected_options = months
+    charts = {
+        interval: pd.DataFrame(
+            data=[
+                (d.strftime("%d/%m"), d.strftime("%a"), c) 
+                for d, c in sorted(values)],
+            columns=['Data', 'Dia' , 'Execuções realizadas']
+        ) for interval, values in interval_dates.items()
+    }
 
-elif filter_option == "Últimos 90 dias":
-    quarters = sorted_dict(split_by_quarters(date_counts))
-    option_type = st.sidebar.selectbox(
-        "Selecione o trimestre",
-        list(quarters.keys())
-    )
-    if len(quarters) > 0:
-        selected_data = quarters[option_type]
-    selected_options = quarters
+    chart = charts[option_type]
+    title = f"{selected_state} - {option_type} ({filter_type_data})"
+
+    info_cards(charts, index_atual=list(charts.keys()).index(option_type), title=title)
 
 
-info_cards(selected_data, title=f"{selected_state} - {option_type} ({filter_option_init})")
-
-# Plotar os dados filtrados
-if selected_data:
-    lineplot(selected_data, days)
-else:
-    st.write("Nenhum dado disponível para o intervalo selecionado.")
+    fig = px.line(chart, x='Dia' if filter_option[4:].capitalize() == 'Semana' else 'Data', y='Execuções realizadas', markers=True, text='Execuções realizadas')
+    fig.update_traces(textposition='top center')
+    st.plotly_chart(fig)
 
 
-info_cards(split_by_total(date_counts), title=f"Panorama {selected_state}")
+    date_max = max(interval_dates[option_type], key=lambda x: x[0])[0]
+    date_min = min(interval_dates[option_type], key=lambda x: x[0])[0]
+    df_filter = df[(df['timeStamp'].dt.date >= date_min) & (df['timeStamp'].dt.date <= date_max)]
 
-# Plotar os dados filtrados
-if selected_options:
-    bar(selected_options, days)
-else:
-    st.write("Nenhum dado disponível para o intervalo selecionado.")
+    map(df_filter)
+    bar_hour(df_filter)
 
-if filter_option_init != "Dados com token":
-    # Contar execuções por estado
-    state_counts = count_executions_by_state(data, selected_state, selected_data)
+    metrics_cards(int(sum(df['Execuções realizadas'])), title="Panorama Geral", color="blue")
 
-    # Exibir o gráfico de barras com execuções por estado
-    st.subheader("Execuções por Estado")
-    bar_by_state(state_counts)
+    col1, col2 = st.columns(2)
+    with col1:
+        charts = {key: charts[key] for key in sorted(charts)}
+        bar = pd.DataFrame(data=[(key, sum(v['Execuções realizadas'])) for key, v in charts.items()], columns=['Período', 'Quantidade de execuções'])
+        fig = px.bar(bar, x='Período', y='Quantidade de execuções', text='Quantidade de execuções')
+        fig.update_traces(textposition='outside')
+        st.plotly_chart(fig)
+    with col2:
+        bar_hour(df)
+
+    
+
+    
+    
