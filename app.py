@@ -5,10 +5,8 @@ from datetime import datetime, timedelta
 import numpy as np
 from collections import defaultdict
 import plotly.express as px
-import locale
 import json
-locale.setlocale(locale.LC_TIME, 'pt_BR')
-
+from babel.dates import format_datetime
 
 @st.cache_data(ttl=60*5) # 5 minutos
 def fetch_data():
@@ -90,7 +88,6 @@ def metrics_cards(cumulative_sum, title, delta=None, color='gray'):
 
     with col3:
         st.metric(label=f":{color}[ :material/left_click:  Cálculos realizados]", value=cumulative_sum, delta=delta )
-
 
 def info_cards(dfs, index_atual, title= ''):
     delta = 0
@@ -214,7 +211,7 @@ if __name__ == "__main__":
     charts = {
         interval: pd.DataFrame(
             data=[
-                (d.strftime("%d/%m"), d.strftime("%a"), c) 
+                (d.strftime("%d/%m"), format_datetime(d, "EEEE", locale='pt_BR')[:3], c) 
                 for d, c in sorted(values)],
             columns=['Data', 'Dia' , 'Execuções realizadas']
         ) for interval, values in interval_dates.items()
