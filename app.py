@@ -74,20 +74,26 @@ def metricMoney(cumulative_sum):
     money_format = money_format.replace(".", ",").replace("_", ".")
     return money_format
 
+def metricCounts(cumulative_sum):
+    cumulative_sum_format = f"{cumulative_sum:_.0f}" 
+    cumulative_sum_format = cumulative_sum_format.replace("_", ".")
+    return cumulative_sum_format
+
 def metrics_cards(cumulative_sum, title, delta=None, color='gray'):
     st.subheader(title)
     col1, col2, col3 = st.columns(3)
     with col1:
         hours = metricHours(cumulative_sum)
-        st.metric(label=f":{color}[:material/clock_loader_40: Oportunidade de custo]", value=hours)
+        st.metric(label=f":{color}[:material/clock_loader_40: Oportunidade de custo]", value=f"{hours} horas")
 
         
     with col2:
         money = metricMoney(cumulative_sum)
-        st.metric(label=f":{color}[ :material/payments: Impacto econômico]", value=money)
+        st.metric(label=f":{color}[ :material/payments: Impacto econômico]", value=f"R$ {money}")
 
     with col3:
-        st.metric(label=f":{color}[ :material/left_click:  Cálculos realizados]", value=cumulative_sum, delta=delta )
+        count = metricCounts(cumulative_sum)
+        st.metric(label=f":{color}[ :material/left_click:  Cálculos realizados]", value=count, delta=delta )
 
 def info_cards(dfs, index_atual, title= ''):
     delta = 0
@@ -123,7 +129,7 @@ def map(df):
         zoom=3,
         center={"lat": -15.7801, "lon": -47.9292},
         opacity=0.7,
-        labels={'Execuções realizadas': 'Execuções realizadas'}
+        labels={'state': 'Estado', 'Execuções realizadas': 'Usos'}
     )
 
     # Ajustar layout do mapa
@@ -133,14 +139,9 @@ def map(df):
     st.plotly_chart(fig)
 
 def bar_hour(df):
-
-    # Extrair hora e data
     df['hour'] = df['timeStamp'].dt.strftime('%H:00')  # Formatar como 'HH:00'
-
-    # Contar execuções por hora
     execucoes_por_hora = df.groupby('hour').size().reset_index(name='execucoes')
 
-    # Criar gráfico com Plotly
     fig = px.bar(
         execucoes_por_hora,
         x='hour',
@@ -224,25 +225,30 @@ if __name__ == "__main__":
 
 
     fig = px.line(chart, x='Dia' if filter_option[4:].capitalize() == 'Semana' else 'Data', y='Execuções realizadas', markers=True, text='Execuções realizadas')
-    fig.update_traces(textposition='top center')
+    fig.update_traces(textposition='top center', textfont_size=16)
     st.plotly_chart(fig)
 
 
     date_max = max(interval_dates[option_type], key=lambda x: x[0])[0]
     date_min = min(interval_dates[option_type], key=lambda x: x[0])[0]
     df_filter = df[(df['timeStamp'].dt.date >= date_min) & (df['timeStamp'].dt.date <= date_max)]
-
-    map(df_filter)
+    if filter_type_data != 'Com token':
+        map(df_filter)
     bar_hour(df_filter)
 
     metrics_cards(int(sum(df['Execuções realizadas'])), title="Panorama Geral", color="blue")
 
     col1, col2 = st.columns(2)
     with col1:
-        charts = {key: charts[key] for key in sorted(charts)}
+        charts = {key: charts[key] for key in sorted(charts)[:8]}
         bar = pd.DataFrame(data=[(key, sum(v['Execuções realizadas'])) for key, v in charts.items()], columns=['Período', 'Quantidade de execuções'])
-        fig = px.bar(bar, x='Período', y='Quantidade de execuções', text='Quantidade de execuções')
-        fig.update_traces(textposition='outside')
+        fig = px.bar(
+                bar, 
+                y='Período', 
+                x='Quantidade de execuções', 
+                text='Quantidade de execuções',
+                orientation='h')
+        fig.update_traces(textposition='outside', textfont_size=16)
         st.plotly_chart(fig)
     with col2:
         bar_hour(df)
