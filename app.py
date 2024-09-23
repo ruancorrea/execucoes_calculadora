@@ -24,13 +24,16 @@ def loading_data():
     })
     return df
 
-def process_data(df, type_data_visualization, selected_state):
+def process_data_type_visualization(df, type_data_visualization):
     cutoff_date = pd.Timestamp(2024, 8, 26).date()
 
-    df = df[df['state'] == selected_state] if selected_state != 'Geral' else df
     if type_data_visualization != "Dados totais":
         df = df[df['timeStamp'].dt.date >= cutoff_date if type_data_visualization == "Aberto ao público" else df['timeStamp'].dt.date < cutoff_date] 
     
+    return df
+
+def process_data_state(df, selected_state):
+    df = df[df['state'] == selected_state] if selected_state != 'Geral' else df
     return df
 
 def split_by_interval(df, interval, type_interval):
@@ -181,6 +184,8 @@ if __name__ == "__main__":
         ("Aberto ao público", "Dados totais", "Com token")
     )
 
+    df = process_data_type_visualization(df, filter_type_data)
+
     states = list(df[df['state'] != "Não informado"]['state'].sort_values().unique())
     states.insert(0, "Geral")
     selected_state = st.sidebar.selectbox(
@@ -200,7 +205,7 @@ if __name__ == "__main__":
         "Por trimestre": 90
     }
     days = days_map[filter_option]
-    df = process_data(df, type_data_visualization=filter_type_data, selected_state=selected_state)
+    df = process_data_state(df, selected_state=selected_state)
     interval_dates = split_by_interval(df, interval=days, type_interval=filter_option[4:].capitalize())
 
 
@@ -218,8 +223,11 @@ if __name__ == "__main__":
         ) for interval, values in interval_dates.items()
     }
 
-    chart = charts[option_type]
-    title = f"{selected_state} - {option_type} ({filter_type_data})"
+    date_max = max(interval_dates[option_type], key=lambda x: x[0])[0]
+    date_min = min(interval_dates[option_type], key=lambda x: x[0])[0]
+
+    chart = charts[option_type] if len(charts) else {}
+    title = f"{selected_state}: {option_type} [{date_min.strftime('%d/%m')} - {date_max.strftime('%d/%m')}] ({filter_type_data})  "
 
     info_cards(charts, index_atual=list(charts.keys()).index(option_type), title=title)
 
@@ -229,8 +237,7 @@ if __name__ == "__main__":
     st.plotly_chart(fig)
 
 
-    date_max = max(interval_dates[option_type], key=lambda x: x[0])[0]
-    date_min = min(interval_dates[option_type], key=lambda x: x[0])[0]
+    
     df_filter = df[(df['timeStamp'].dt.date >= date_min) & (df['timeStamp'].dt.date <= date_max)]
     if filter_type_data != 'Com token':
         map(df_filter)
