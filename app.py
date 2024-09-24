@@ -86,14 +86,14 @@ def metrics_cards(cumulative_sum, title, delta=None, color='gray'):
     st.subheader(title)
     col1, col2, col3 = st.columns(3)
     with col1:
-        hours = metricHours(cumulative_sum)
-        st.metric(label=f":{color}[:material/clock_loader_40: Oportunidade de custo]", value=f"{hours} horas")
-
-        
-    with col2:
         money = metricMoney(cumulative_sum)
         st.metric(label=f":{color}[ :material/payments: Impacto econômico]", value=f"R$ {money}")
 
+        
+    with col2:
+        hours = metricHours(cumulative_sum)
+        st.metric(label=f":{color}[:material/clock_loader_40: Custo de oportunidade]", value=f"{hours} horas")
+        
     with col3:
         count = metricCounts(cumulative_sum)
         st.metric(label=f":{color}[ :material/left_click:  Cálculos realizados]", value=count, delta=delta )
