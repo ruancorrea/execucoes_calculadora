@@ -168,7 +168,7 @@ def bar_hour(df):
 
     st.plotly_chart(fig)
 
-
+"""
 def chat_ai(store, df, interval_dates, option_type, selected_state, filter_type_data):
     messages = st.sidebar.container(height=350)
     prompt = st.sidebar.chat_input("Fale sobre o dashboard atual")
@@ -181,6 +181,7 @@ def chat_ai(store, df, interval_dates, option_type, selected_state, filter_type_
         response = chat.conversion(prompt, store)
 
         messages.chat_message("assistant").write(f"{response}")
+"""
 
 if __name__ == "__main__":
 
