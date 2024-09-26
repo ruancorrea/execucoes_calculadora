@@ -2,11 +2,20 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
-import numpy as np
 from collections import defaultdict
 import plotly.express as px
 import json
 from babel.dates import format_datetime
+from unidecode import unidecode
+
+from groq_ai import GROQ_AI
+
+def loading_html(file="app.html"):
+    # Carrega o conteúdo HTML do arquivo
+    with open(file, 'r') as f:
+        html_string = f.read()
+
+    return html_string
 
 @st.cache_data(ttl=60*5) # 5 minutos
 def fetch_data():
@@ -106,7 +115,7 @@ def info_cards(dfs, index_atual, title= ''):
     if index_atual < len(dfs) - 1:
         df_anterior=dfs[keys[index_atual+1]]
         cumulative_sum_anterior = int(sum(df_anterior['Execuções realizadas']))
-        delta=round(cumulative_sum * 100 / cumulative_sum_anterior, 2)
+        delta=round((cumulative_sum / cumulative_sum_anterior - 1)*100, 2)
         delta= f"{delta:_.2f} %"
         delta = delta.replace(".", ",").replace("_", ".")
 
@@ -117,7 +126,7 @@ def map(df):
     df = df[df['state'] != "Não informado"]
 
     df_map=df.groupby('state').agg({'Execuções realizadas': 'sum'}).reset_index()
-    df_map['Execuções realizadas'] = df_map['Execuções realizadas'].astype(int) 
+    df_map['Execuções realizadas'] = df_map['Execuções realizadas'].astype(int)
     with open('br_states.json', 'r', encoding='utf-8') as f:
         brasil_geo = json.load(f)
     
@@ -141,7 +150,10 @@ def map(df):
     # Mostrar o mapa no Streamlit
     st.plotly_chart(fig)
 
+    return df_map
+
 def bar_hour(df):
+
     df['hour'] = df['timeStamp'].dt.strftime('%H:00')  # Formatar como 'HH:00'
     execucoes_por_hora = df.groupby('hour').size().reset_index(name='execucoes')
 
@@ -156,26 +168,26 @@ def bar_hour(df):
 
     st.plotly_chart(fig)
 
+
+def chat_ai(store, df, interval_dates, option_type, selected_state, filter_type_data):
+    messages = st.sidebar.container(height=350)
+    prompt = st.sidebar.chat_input("Fale sobre o dashboard atual")
+
+    chat = GROQ_AI(store, df, interval_dates, option_type, selected_state, filter_type_data)
+    
+    # Se houver uma entrada, mostrar as mensagens
+    if prompt:
+        messages.chat_message("user").write(prompt)
+        response = chat.conversion(prompt, store)
+
+        messages.chat_message("assistant").write(f"{response}")
+
 if __name__ == "__main__":
 
     df = loading_data()
 
     # Streamlit App
-    st.markdown(
-        """
-        <h1> Calculadora de Aposentadoria </h1>
-        <style>
-        .main .block-container{
-            max-width: 80%; /* Defina a largura desejada */
-            padding-top: 3rem;
-            padding-bottom: 3rem;
-            padding-left: 3rem;
-            padding-right: 3rem;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown( loading_html(), unsafe_allow_html=True)
 
     st.sidebar.header("Filtros")
 
@@ -208,11 +220,12 @@ if __name__ == "__main__":
     df = process_data_state(df, selected_state=selected_state)
     interval_dates = split_by_interval(df, interval=days, type_interval=filter_option[4:].capitalize())
 
-
     option_type = st.sidebar.selectbox(
-        f"Selecione o {filter_option[4:]}",
+        f"Selecione {filter_option[4:]}",
         list(interval_dates.keys())
     )
+    store = f"{option_type}{filter_option}{selected_state}{filter_type_data}.pkl"
+    store = unidecode(store.replace(" ", "").lower())
 
     charts = {
         interval: pd.DataFrame(
@@ -222,6 +235,7 @@ if __name__ == "__main__":
             columns=['Data', 'Dia' , 'Execuções realizadas']
         ) for interval, values in interval_dates.items()
     }
+
 
     date_max = max(interval_dates[option_type], key=lambda x: x[0])[0]
     date_min = min(interval_dates[option_type], key=lambda x: x[0])[0]
@@ -235,12 +249,13 @@ if __name__ == "__main__":
     fig = px.line(chart, x='Dia' if filter_option[4:].capitalize() == 'Semana' else 'Data', y='Execuções realizadas', markers=True, text='Execuções realizadas')
     fig.update_traces(textposition='top center', textfont_size=16)
     st.plotly_chart(fig)
-
-
     
     df_filter = df[(df['timeStamp'].dt.date >= date_min) & (df['timeStamp'].dt.date <= date_max)]
     if filter_type_data != 'Com token':
-        map(df_filter)
+        df_map = map(df_filter)
+
+    #chat_ai(store, df_map, interval_dates, option_type, selected_state, filter_type_data)
+
     bar_hour(df_filter)
 
     metrics_cards(int(sum(df['Execuções realizadas'])), title="Panorama Geral", color="blue")
