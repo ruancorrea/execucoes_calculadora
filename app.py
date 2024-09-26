@@ -8,8 +8,6 @@ import json
 from babel.dates import format_datetime
 from unidecode import unidecode
 
-#from groq_ai import GROQ_AI
-
 def loading_html(file="app.html"):
     # Carrega o conteúdo HTML do arquivo
     with open(file, 'r') as f:
@@ -168,20 +166,6 @@ def bar_hour(df):
 
     st.plotly_chart(fig)
 
-"""
-def chat_ai(store, df, interval_dates, option_type, selected_state, filter_type_data):
-    messages = st.sidebar.container(height=350)
-    prompt = st.sidebar.chat_input("Fale sobre o dashboard atual")
-
-    chat = GROQ_AI(store, df, interval_dates, option_type, selected_state, filter_type_data)
-    
-    # Se houver uma entrada, mostrar as mensagens
-    if prompt:
-        messages.chat_message("user").write(prompt)
-        response = chat.conversion(prompt, store)
-
-        messages.chat_message("assistant").write(f"{response}")
-"""
 
 if __name__ == "__main__":
 
@@ -254,8 +238,6 @@ if __name__ == "__main__":
     df_filter = df[(df['timeStamp'].dt.date >= date_min) & (df['timeStamp'].dt.date <= date_max)]
     if filter_type_data != 'Com token':
         df_map = map(df_filter)
-
-    #chat_ai(store, df_map, interval_dates, option_type, selected_state, filter_type_data)
 
     bar_hour(df_filter)
 
