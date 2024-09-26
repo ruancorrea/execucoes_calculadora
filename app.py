@@ -8,7 +8,7 @@ import json
 from babel.dates import format_datetime
 from unidecode import unidecode
 
-from groq_ai import GROQ_AI
+#from groq_ai import GROQ_AI
 
 def loading_html(file="app.html"):
     # Carrega o conteúdo HTML do arquivo
