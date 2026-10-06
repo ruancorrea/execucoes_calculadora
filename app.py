@@ -672,11 +672,18 @@ with st.sidebar:
 # ==============================================================================
 # 10. CABEÇALHO INSTITUCIONAL
 # ==============================================================================
+if selected_app in ["Simulador Previdenciário", "simulador_previdenciario"] or "Previdenciário" in selected_app:
+    header_tool_title = "Tahan"
+elif selected_app in ["Simulador de Aposentadoria", "simulador_aposentadoria"] or "Aposentadoria" in selected_app:
+    header_tool_title = "Calculadora de Aposentadoria"
+else:
+    header_tool_title = "Ferramentas"
+
 st.markdown(
     f"""
     <div class="jfal-header">
         <div>
-            <h1 class="jfal-header-title">Calculadora Previdenciária • Justiça Federal em Alagoas</h1>
+            <h1 class="jfal-header-title">{header_tool_title} • Justiça Federal em Alagoas</h1>
             <p class="jfal-header-sub">Painel Executivo de Impacto Econômico, Celeridade Processual e Produtividade das Simulações</p>
         </div>
         <div>
@@ -790,7 +797,7 @@ is_previdenciario = (
 
 if is_previdenciario:
     st.markdown(
-        "<div class='section-title'>⚖️ Comparativo de Operações (TaskNames) • Simulador Previdenciário</div>",
+        "<div class='section-title'>⚖️ Comparativo de Operações • Simulador Previdenciário</div>",
         unsafe_allow_html=True
     )
     st.caption(
