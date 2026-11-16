@@ -165,7 +165,9 @@ HORAS_POR_CALCULO_PREVIDENCIARIO = {
 }
 HORAS_POR_CALCULO = 2.5     # Custo de oportunidade padrão mantido por compatibilidade
 VALOR_HORA_TECNICA = 99.91  # Custo da hora técnica/pericial estabelecido no modelo da JFAL
-CUTOFF_DATE = datetime.date(2024, 8, 26)  # Marco histórico de abertura pública
+CUTOFF_DATE_APOSENTADORIA = datetime.date(2024, 8, 26)  # Marco histórico de abertura pública (Aposentadoria)
+CUTOFF_DATE_PREVIDENCIARIO = datetime.date(2025, 10, 1)  # Marco histórico de abertura pública (Previdenciário)
+CUTOFF_DATE = CUTOFF_DATE_APOSENTADORIA  # Mantido por compatibilidade
 
 # ==============================================================================
 # 4. FUNÇÃO DE DETECÇÃO AUTOMÁTICA DO TEMA ATUAL (LIGHT OU DARK)
@@ -476,7 +478,7 @@ def process_dataframe(data: List[Dict[str, Any]]) -> pd.DataFrame:
     def clean_task(t_str):
         tasks = {
             "calculo_aposentadoria": "Cálculo de Aposentadoria",
-            "simulador_previdenciario_rrc_dispatcher_creation": "Criação de RRC (Dispatcher)",
+            "simulador_previdenciario_rrc_dispatcher_creation": "RRC",
             "simulador_previdenciario_retirement_salary_calculation": "Salário de Aposentadoria",
             "simulador_previdenciario_special_benefit_calculation": "Benefício Especial",
             "simulador_previdenciario_rrc_jfal_creation": "Criação de RRC (JFAL)",
@@ -533,6 +535,15 @@ def process_dataframe(data: List[Dict[str, Any]]) -> pd.DataFrame:
     df["dia_semana_num"] = df["timeStamp"].dt.dayofweek
     dias_pt = {0: "Seg", 1: "Ter", 2: "Qua", 3: "Qui", 4: "Sex", 5: "Sáb", 6: "Dom"}
     df["dia_semana_nome"] = df["dia_semana_num"].map(dias_pt)
+
+    # Identificação se a simulação ocorreu na fase aberta ao público
+    def check_is_public(row):
+        app = row["applicationName"]
+        d = row["date"]
+        cutoff = CUTOFF_DATE_PREVIDENCIARIO if app == "simulador_previdenciario" else CUTOFF_DATE_APOSENTADORIA
+        return d >= cutoff
+
+    df["is_public"] = df.apply(check_is_public, axis=1)
 
     return df
 
@@ -652,14 +663,14 @@ with st.sidebar:
     filtro_fase = st.selectbox(
         "Fase dos Dados",
         ("Aberto ao público", "Dados totais", "Com token"),
-        help="Aberto ao público considera registros após 26/08/2024."
+        help="Aberto ao público considera registros a partir de 26/08/2024 para Aposentadoria e 01/10/2025 para Previdenciário."
     )
 
     df_filtered = df_all.copy()
     if filtro_fase == "Aberto ao público":
-        df_filtered = df_filtered[df_filtered["date"] >= CUTOFF_DATE]
+        df_filtered = df_filtered[df_filtered["is_public"]]
     elif filtro_fase == "Com token":
-        df_filtered = df_filtered[df_filtered["date"] < CUTOFF_DATE]
+        df_filtered = df_filtered[~df_filtered["is_public"]]
 
     # 2. Simulador / Aplicação
     app_options = ["Todos os Simuladores"] + sorted(df_filtered["app_label"].unique().tolist())
@@ -843,18 +854,18 @@ if is_previdenciario:
     )
     st.caption(
         "Detalhamento comparativo entre as diferentes modalidades de simulação executadas pelo módulo Previdenciário "
-        "(Criação de RRC - Dispatcher, Salário de Aposentadoria e Benefício Especial)."
+        "(RRC, Salário de Aposentadoria e Benefício Especial)."
     )
 
     # 1. Cards de Resumo por Tarefa no Período Selecionado
     task_counts_period = df_period_slice["task_label"].value_counts()
     task_colors_map = {
-        "Criação de RRC (Dispatcher)": "#0284c7",
+        "RRC": "#0284c7",
         "Salário de Aposentadoria": "#10b981",
         "Benefício Especial": "#f59e0b"
     }
 
-    prev_tasks = ["Criação de RRC (Dispatcher)", "Salário de Aposentadoria", "Benefício Especial"]
+    prev_tasks = ["RRC", "Salário de Aposentadoria", "Benefício Especial"]
     cols_tasks = st.columns(len(prev_tasks))
 
     for idx, t_name in enumerate(prev_tasks):
