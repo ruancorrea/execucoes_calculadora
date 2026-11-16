@@ -157,7 +157,13 @@ st.markdown(DYNAMIC_THEME_CSS, unsafe_allow_html=True)
 # ==============================================================================
 # 3. CONSTANTES ECONÔMICAS INSTITUCIONAIS DA JFAL
 # ==============================================================================
-HORAS_POR_CALCULO = 2.5     # Custo de oportunidade: 2.5h economizadas por cálculo
+HORAS_POR_CALCULO_APOSENTADORIA = 2.5  # Custo de oportunidade: 2.5h economizadas por cálculo no simulador de aposentadoria
+HORAS_POR_CALCULO_PREVIDENCIARIO = {
+    "simulador_previdenciario_rrc_dispatcher_creation": 24.04,
+    "simulador_previdenciario_retirement_salary_calculation": 1.75,
+    "simulador_previdenciario_special_benefit_calculation": 1.64
+}
+HORAS_POR_CALCULO = 2.5     # Custo de oportunidade padrão mantido por compatibilidade
 VALOR_HORA_TECNICA = 99.91  # Custo da hora técnica/pericial estabelecido no modelo da JFAL
 CUTOFF_DATE = datetime.date(2024, 8, 26)  # Marco histórico de abertura pública
 
@@ -448,18 +454,50 @@ def process_dataframe(data: List[Dict[str, Any]]) -> pd.DataFrame:
     }
     df["app_label"] = df["applicationName"].map(lambda x: app_map.get(x, x))
 
-    # Tarefas
-    def clean_task(t):
-        t_str = str(t).replace("{", "").replace("}", "").replace('"', '').strip()
+    # Limpeza e normalização do identificador de tarefa
+    def clean_raw_task(t):
+        return str(t).replace("{", "").replace("}", "").replace('"', '').strip()
+
+    df["raw_task"] = df["taskName"].apply(clean_raw_task)
+
+    # Filtragem de tarefas: para o simulador_previdenciario, considerar exclusivamente:
+    # 1. simulador_previdenciario_rrc_dispatcher_creation (24.04h)
+    # 2. simulador_previdenciario_retirement_salary_calculation (1.75h)
+    # 3. simulador_previdenciario_special_benefit_calculation (1.64h)
+    mask_aposentadoria = (df["applicationName"] == "simulador_aposentadoria")
+    mask_previdenciario = (
+        (df["applicationName"] == "simulador_previdenciario") &
+        (df["raw_task"].isin(HORAS_POR_CALCULO_PREVIDENCIARIO.keys()))
+    )
+    mask_outros = ~df["applicationName"].isin(["simulador_aposentadoria", "simulador_previdenciario"])
+    df = df[mask_aposentadoria | mask_previdenciario | mask_outros].copy()
+
+    # Rótulos amigáveis de Tarefas
+    def clean_task(t_str):
         tasks = {
             "calculo_aposentadoria": "Cálculo de Aposentadoria",
-            "simulador_previdenciario_rrc_jfal_creation": "Criação de RRC (JFAL)",
+            "simulador_previdenciario_rrc_dispatcher_creation": "Criação de RRC (Dispatcher)",
             "simulador_previdenciario_retirement_salary_calculation": "Salário de Aposentadoria",
+            "simulador_previdenciario_special_benefit_calculation": "Benefício Especial",
+            "simulador_previdenciario_rrc_jfal_creation": "Criação de RRC (JFAL)",
             "simulador_previdenciario_rrc_creation": "Criação de RRC (Geral)"
         }
         return tasks.get(t_str, t_str.replace("_", " ").title())
 
-    df["task_label"] = df["taskName"].apply(clean_task)
+    df["task_label"] = df["raw_task"].apply(clean_task)
+
+    # Cálculo dinâmico das horas poupadas e impacto econômico por cálculo
+    def get_horas_calculo(row):
+        app = row["applicationName"]
+        raw_t = row["raw_task"]
+        if app == "simulador_previdenciario":
+            return HORAS_POR_CALCULO_PREVIDENCIARIO.get(raw_t, HORAS_POR_CALCULO)
+        elif app == "simulador_aposentadoria":
+            return HORAS_POR_CALCULO_APOSENTADORIA
+        return HORAS_POR_CALCULO
+
+    df["horas_poupadas"] = df.apply(get_horas_calculo, axis=1)
+    df["impacto_economico"] = df["horas_poupadas"] * VALOR_HORA_TECNICA
 
     # Órgãos normalizados
     def clean_agency(a):
@@ -501,13 +539,13 @@ def process_dataframe(data: List[Dict[str, Any]]) -> pd.DataFrame:
 # ==============================================================================
 # 7. FORMATAÇÃO E LÓGICA DE INTERVALOS
 # ==============================================================================
-def format_money(count: int) -> str:
-    total = round(count * HORAS_POR_CALCULO * VALOR_HORA_TECNICA, 2)
-    return f"R$ {int(total):_.0f}".replace("_", ".")
+def format_money(val: float, is_count: bool = False, horas: float = HORAS_POR_CALCULO) -> str:
+    total = val * horas * VALOR_HORA_TECNICA if is_count else val
+    return f"R$ {int(round(total)):_.0f}".replace("_", ".")
 
-def format_hours(count: int) -> str:
-    hours = count * HORAS_POR_CALCULO
-    return f"{int(hours):_.0f} h".replace("_", ".")
+def format_hours(val: float, is_count: bool = False, horas: float = HORAS_POR_CALCULO) -> str:
+    total_hours = val * horas if is_count else val
+    return f"{int(round(total_hours)):_.0f} h".replace("_", ".")
 
 def format_count(count: int) -> str:
     return f"{int(count):_.0f}".replace("_", ".")
@@ -724,6 +762,9 @@ pico_dia = chart_daily_calc.loc[chart_daily_calc["count"].idxmax()] if not chart
 pico_data_label = f"{pico_dia['dia_label']} ({pico_dia['data_label']})" if pico_dia is not None else "-"
 pico_val = int(pico_dia["count"]) if pico_dia is not None else 0
 
+impacto_periodo = df_period_slice["impacto_economico"].sum()
+horas_periodo = df_period_slice["horas_poupadas"].sum()
+
 # Exibição dos 5 cards principais
 k1, k2, k3, k4, k5 = st.columns(5)
 
@@ -732,7 +773,7 @@ with k1:
         f"""
         <div class="metric-card-box">
             <div class="metric-title">💳 Impacto Econômico</div>
-            <div class="metric-val">{format_money(calculos_periodo)}</div>
+            <div class="metric-val">{format_money(impacto_periodo)}</div>
             <div class="metric-sub">{delta_text or 'Economia aos cofres'}</div>
         </div>
         """,
@@ -744,7 +785,7 @@ with k2:
         f"""
         <div class="metric-card-box">
             <div class="metric-title">⏱️ Custo de Oportunidade</div>
-            <div class="metric-val">{format_hours(calculos_periodo)}</div>
+            <div class="metric-val">{format_hours(horas_periodo)}</div>
             <div class="metric-sub">Horas poupadas de peritos</div>
         </div>
         """,
@@ -802,30 +843,33 @@ if is_previdenciario:
     )
     st.caption(
         "Detalhamento comparativo entre as diferentes modalidades de simulação executadas pelo módulo Previdenciário "
-        "(Criação de RRC - JFAL, Criação de RRC - Geral e Cálculo de Salário de Aposentadoria)."
+        "(Criação de RRC - Dispatcher, Salário de Aposentadoria e Benefício Especial)."
     )
 
     # 1. Cards de Resumo por Tarefa no Período Selecionado
     task_counts_period = df_period_slice["task_label"].value_counts()
     task_colors_map = {
-        "Criação de RRC (JFAL)": "#0284c7",
+        "Criação de RRC (Dispatcher)": "#0284c7",
         "Salário de Aposentadoria": "#10b981",
-        "Criação de RRC (Geral)": "#f59e0b"
+        "Benefício Especial": "#f59e0b"
     }
 
-    prev_tasks = ["Criação de RRC (JFAL)", "Salário de Aposentadoria", "Criação de RRC (Geral)"]
+    prev_tasks = ["Criação de RRC (Dispatcher)", "Salário de Aposentadoria", "Benefício Especial"]
     cols_tasks = st.columns(len(prev_tasks))
 
     for idx, t_name in enumerate(prev_tasks):
+        df_t = df_period_slice[df_period_slice["task_label"] == t_name]
         cnt = int(task_counts_period.get(t_name, 0))
         pct = (cnt / calculos_periodo * 100) if calculos_periodo > 0 else 0
+        horas_t = df_t["horas_poupadas"].sum() if not df_t.empty else 0.0
+        impacto_t = df_t["impacto_economico"].sum() if not df_t.empty else 0.0
         with cols_tasks[idx]:
             st.markdown(
                 f"""
                 <div class="metric-card-box" style="border-left: 4px solid {task_colors_map.get(t_name, '#38bdf8')};">
                     <div class="metric-title">📋 {t_name}</div>
                     <div class="metric-val" style="font-size: 1.5rem; color: {task_colors_map.get(t_name, '#0284c7')};">{format_count(cnt)} <span style="font-size: 0.85rem; font-weight: 500; opacity: 0.8;">({pct:.1f}%)</span></div>
-                    <div class="metric-sub">{format_money(cnt)} economizados • {format_hours(cnt)}</div>
+                    <div class="metric-sub">{format_money(impacto_t)} economizados • {format_hours(horas_t)}</div>
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -974,14 +1018,16 @@ if is_previdenciario:
         pct = (cnt / calculos_periodo * 100) if calculos_periodo > 0 else 0
         df_t = df_period_slice[df_period_slice["task_label"] == t]
         dur_med = df_t["duration_sec"].mean() if not df_t.empty else 0.0
+        horas_t = df_t["horas_poupadas"].sum() if not df_t.empty else 0.0
+        impacto_t = df_t["impacto_economico"].sum() if not df_t.empty else 0.0
         cnt_total_hist = int((df_filtered["task_label"] == t).sum())
 
         table_data.append({
             "Operação / Tarefa (TaskName)": t,
             "Execuções no Período": cnt,
             "Participação (%)": f"{pct:.1f}%",
-            "Impacto Econômico": format_money(cnt),
-            "Horas Poupadas": format_hours(cnt),
+            "Impacto Econômico": format_money(impacto_t),
+            "Horas Poupadas": format_hours(horas_t),
             "Duração Média": f"{dur_med:.1f}s",
             "Total Histórico Acumulado": cnt_total_hist
         })
@@ -1082,9 +1128,16 @@ st.markdown("<div class='section-title'>🗺️ Distribuição Geográfica de C�
 st.caption("Mapa geográfico interativo no padrão original da JFAL, exibido em tamanho amplo com cartografia real e adaptação automática ao tema Light / Dark.")
 
 df_map_data = df_period_slice[df_period_slice["state"] != "Não informado"]
-map_state_counts = df_map_data.groupby("state").size().reset_index(name="Execuções")
-map_state_counts["Impacto"] = map_state_counts["Execuções"].apply(lambda x: format_money(x))
-map_state_counts["Horas"] = map_state_counts["Execuções"].apply(lambda x: format_hours(x))
+if not df_map_data.empty:
+    map_state_counts = df_map_data.groupby("state").agg(
+        Execuções=("id", "count"),
+        Impacto_num=("impacto_economico", "sum"),
+        Horas_num=("horas_poupadas", "sum")
+    ).reset_index()
+    map_state_counts["Impacto"] = map_state_counts["Impacto_num"].apply(format_money)
+    map_state_counts["Horas"] = map_state_counts["Horas_num"].apply(format_hours)
+else:
+    map_state_counts = pd.DataFrame(columns=["state", "Execuções", "Impacto", "Horas"])
 
 if not map_state_counts.empty:
     map_func = getattr(px, 'choropleth_map', getattr(px, 'choropleth_mapbox', None))
@@ -1360,6 +1413,8 @@ st.markdown("<div class='section-title'>🌐 Panorama Geral Acumulado (Todo o Hi
 st.caption("Totais absolutos desde o início das operações da calculadora na Justiça Federal em Alagoas.")
 
 total_acumulado = len(df_filtered)
+total_impacto_acumulado = df_filtered["impacto_economico"].sum()
+total_horas_acumulado = df_filtered["horas_poupadas"].sum()
 
 pg1, pg2, pg3 = st.columns(3)
 
@@ -1368,7 +1423,7 @@ with pg1:
         f"""
         <div class="metric-card-box">
             <div class="metric-title">💳 Impacto Econômico Histórico</div>
-            <div class="metric-val" style="color: #0284c7;">{format_money(total_acumulado)}</div>
+            <div class="metric-val" style="color: #0284c7;">{format_money(total_impacto_acumulado)}</div>
             <div class="metric-sub">Economia estimada acumulada</div>
         </div>
         """,
@@ -1380,7 +1435,7 @@ with pg2:
         f"""
         <div class="metric-card-box">
             <div class="metric-title">⏱️ Horas Técnicas Economizadas</div>
-            <div class="metric-val" style="color: #0284c7;">{format_hours(total_acumulado)}</div>
+            <div class="metric-val" style="color: #0284c7;">{format_hours(total_horas_acumulado)}</div>
             <div class="metric-sub">Trabalho técnico/pericial poupado</div>
         </div>
         """,
@@ -1508,7 +1563,7 @@ with st.expander("📋 Ver Tabela de Dados Granulares e Exportar Relatório CSV"
 
     df_export = df_period_slice[[
         "id", "timeStamp", "app_label", "task_label", "state", "agency_clean",
-        "filledByPDF", "duration_sec"
+        "filledByPDF", "duration_sec", "horas_poupadas", "impacto_economico"
     ]].copy()
 
     df_export = df_export.rename(columns={
@@ -1519,7 +1574,9 @@ with st.expander("📋 Ver Tabela de Dados Granulares e Exportar Relatório CSV"
         "state": "Estado (UF)",
         "agency_clean": "Órgão Identificado",
         "filledByPDF": "Entrada via PDF",
-        "duration_sec": "Duração (s)"
+        "duration_sec": "Duração (s)",
+        "horas_poupadas": "Horas Poupadas",
+        "impacto_economico": "Impacto Econômico (R$)"
     })
 
     if busca:
